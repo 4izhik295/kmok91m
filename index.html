@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Messenger</title>
+
+<style>
+body {
+  margin:0;
+  font-family: Arial;
+  background:#e6ecf0;
+}
+
+.app {
+  display:flex;
+  height:100vh;
+}
+
+/* sidebar */
+.sidebar {
+  width:30%;
+  background:white;
+  border-right:1px solid #ddd;
+  overflow-y:auto;
+}
+
+.topbar {
+  display:flex;
+  justify-content:space-between;
+  padding:10px;
+  border-bottom:1px solid #eee;
+}
+
+.chat-item {
+  padding:10px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+.chat-item:hover {
+  background:#f5f5f5;
+}
+
+/* chat */
+.chat {
+  width:70%;
+  display:flex;
+  flex-direction:column;
+}
+
+.messages {
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+}
+
+.msg {
+  margin:5px 0;
+  padding:8px;
+  border-radius:10px;
+  max-width:60%;
+}
+
+.me {
+  background:#0088cc;
+  color:white;
+  margin-left:auto;
+}
+
+.other {
+  background:#ddd;
+}
+
+.input-area {
+  display:flex;
+  padding:10px;
+  background:white;
+}
+
+input {
+  flex:1;
+  padding:10px;
+}
+
+button {
+  padding:10px;
+  background:#0088cc;
+  color:white;
+  border:none;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<!-- AUTH -->
+<div id="auth">
+  <h2>Вход / Регистрация</h2>
+
+  <input id="username" placeholder="Ник">
+  <input id="password" type="password" placeholder="Пароль">
+  <input id="avatar" placeholder="Ссылка на аватар">
+
+  <button onclick="register()">Регистрация</button>
+  <button onclick="login()">Войти</button>
+</div>
+
+<!-- APP -->
+<div class="app" id="app" style="display:none;">
+
+  <div class="sidebar">
+    <div class="topbar">
+      <b>Чаты</b>
+      <button onclick="createGroup()">+</button>
+    </div>
+
+    <div id="users"></div>
+  </div>
+
+  <div class="chat">
+    <div class="messages" id="messages"></div>
+
+    <div class="input-area">
+      <input id="text" placeholder="Сообщение...">
+      <button onclick="send()">➤</button>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set, push, onChildAdded, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// 🔥 ВСТАВЬ СВОИ ДАННЫЕ
+const firebaseConfig = {
+  apiKey: "AIzaSyCp6du4xz9oe0YMhDIE_e1T1nNblVCL4IY",
+  authDomain: "messengerlol-3bedb.firebaseapp.com",
+  databaseURL: "https://messengerlol-3bedb-default-rtdb.firebaseio.com",
+  projectId: "messengerlol-3bedb",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+let currentUser = null;
+let currentChat = null;
+
+// регистрация
+window.register = async () => {
+  const nick = username.value;
+  const pass = password.value;
+  const ava = avatar.value;
+
+  if (!nick || !pass) return alert("Заполни всё");
+
+  await signInAnonymously(auth);
+
+  await set(ref(db, "users/" + nick), {
+    password: pass,
+    avatar: ava || "https://i.imgur.com/1X6sZ9B.png"
+  });
+
+  alert("Готово! Теперь войди");
+};
+
+// вход
+window.login = async () => {
+  const nick = username.value;
+  const pass = password.value;
+
+  await signInAnonymously(auth);
+
+  const snap = await get(ref(db, "users/" + nick));
+
+  if (!snap.exists()) return alert("Нет такого пользователя");
+
+  const data = snap.val();
+
+  if (data.password !== pass) return alert("Неверный пароль");
+
+  currentUser = {
+    nick: nick,
+    avatar: data.avatar
+  };
+
+  document.getElementById("auth").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+
+  loadChats();
+};
+
+// загрузка пользователей + групп
+function loadChats(){
+  users.innerHTML="";
+
+  // пользователи
+  onValue(ref(db,"users"), (snap)=>{
+    users.innerHTML="";
+
+    snap.forEach(child=>{
+      const nick = child.key;
+      if(nick===currentUser.nick) return;
+
+      const div = document.createElement("div");
+      div.className="chat-item";
+      div.textContent = nick;
+
+      div.onclick = ()=>openPrivateChat(nick);
+
+      users.appendChild(div);
+    });
+
+    loadGroups();
+  });
+}
+
+// группы
+function loadGroups(){
+  onValue(ref(db,"groups"), (snap)=>{
+    snap.forEach(child=>{
+      const g = child.val();
+      const id = child.key;
+
+      const div = document.createElement("div");
+      div.className="chat-item";
+      div.textContent = "👥 " + g.name;
+
+      div.onclick = ()=>openGroup(id);
+
+      users.appendChild(div);
+    });
+  });
+}
+
+// создать группу
+window.createGroup = async () => {
+  const name = prompt("Название группы");
+  if (!name) return;
+
+  const id = "group_" + Date.now();
+
+  await set(ref(db, "groups/" + id), {
+    name: name,
+    owner: currentUser.nick
+  });
+};
+
+// id чата
+function chatId(a,b){
+  return a<b ? a+"_"+b : b+"_"+a;
+}
+
+// личный чат
+function openPrivateChat(nick){
+  currentChat = {
+    type: "private",
+    id: nick
+  };
+
+  messages.innerHTML="";
+
+  const id = chatId(currentUser.nick, nick);
+
+  onChildAdded(ref(db,"messages/"+id),(snap)=>{
+    renderMessage(snap.val());
+  });
+}
+
+// группа
+function openGroup(groupId){
+  currentChat = {
+    type: "group",
+    id: groupId
+  };
+
+  messages.innerHTML="";
+
+  onChildAdded(ref(db,"messages/"+groupId),(snap)=>{
+    renderMessage(snap.val());
+  });
+}
+
+// отрисовка сообщения
+function renderMessage(m){
+  const div = document.createElement("div");
+  div.className="msg " + (m.name===currentUser.nick ? "me":"other");
+
+  div.innerHTML = `
+    <img src="${m.avatar}" width="25" style="border-radius:50%">
+    <b>${m.name}</b>: ${m.text}
+  `;
+
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+// отправка
+window.send = ()=>{
+  if(!currentChat) return alert("Выбери чат");
+
+  let path;
+
+  if(currentChat.type==="private"){
+    path = "messages/" + chatId(currentUser.nick, currentChat.id);
+  } else {
+    path = "messages/" + currentChat.id;
+  }
+
+  push(ref(db, path), {
+    name: currentUser.nick,
+    text: text.value,
+    avatar: currentUser.avatar
+  });
+
+  text.value="";
+};
+</script>
+
+</body>
+</html>
