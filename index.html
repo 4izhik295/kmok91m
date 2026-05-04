@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Messenger</title>
+
+<style>
+body {
+  margin:0;
+  font-family: Arial;
+  background:#e6ecf0;
+}
+
+.app {
+  display:flex;
+  height:100vh;
+}
+
+.sidebar {
+  width:30%;
+  background:white;
+  border-right:1px solid #ddd;
+  overflow-y:auto;
+}
+
+.topbar {
+  display:flex;
+  justify-content:space-between;
+  padding:10px;
+  border-bottom:1px solid #eee;
+}
+
+.chat-item {
+  padding:10px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+.chat-item:hover { background:#f5f5f5; }
+
+.chat {
+  width:70%;
+  display:flex;
+  flex-direction:column;
+}
+
+.messages {
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+}
+
+.msg {
+  margin:5px 0;
+  padding:8px;
+  border-radius:10px;
+  max-width:70%;
+}
+
+.me {
+  background:#0088cc;
+  color:white;
+  margin-left:auto;
+}
+
+.other {
+  background:#ddd;
+}
+
+.input-area {
+  display:flex;
+  padding:10px;
+  background:white;
+}
+
+input {
+  flex:1;
+  padding:10px;
+}
+
+button {
+  padding:10px;
+  background:#0088cc;
+  color:white;
+  border:none;
+  cursor:pointer;
+  margin-left:5px;
+}
+
+#typing {
+  font-size:12px;
+  color:gray;
+  padding:5px 10px;
+}
+
+@media (max-width:768px){
+  .app { flex-direction:column; }
+  .sidebar { width:100%; height:40%; }
+  .chat { width:100%; height:60%; }
+}
+</style>
+</head>
+
+<body>
+
+<!-- AUTH (NO EMAIL) -->
+<div id="auth">
+  <h2>Вход / Регистрация</h2>
+
+  <input id="username" placeholder="Ник">
+  <input id="password" type="password" placeholder="Пароль">
+  <input id="avatar" placeholder="Аватар URL">
+
+  <button onclick="register()">Регистрация</button>
+  <button onclick="login()">Войти</button>
+</div>
+
+<!-- APP -->
+<div class="app" id="app" style="display:none;">
+
+  <div class="sidebar">
+    <div class="topbar">
+      <b>Чаты</b>
+      <button onclick="createGroup()">+</button>
+    </div>
+    <div id="users"></div>
+  </div>
+
+  <div class="chat">
+    <div id="typing"></div>
+    <div class="messages" id="messages"></div>
+
+    <div class="input-area">
+      <input id="text" placeholder="Сообщение...">
+      <button onclick="send()">➤</button>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+import {
+  getDatabase,
+  ref,
+  set,
+  onValue,
+  get,
+  onDisconnect
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCp6du4xz9oe0YMhDIE_e1T1nNblVCL4IY",
+  authDomain: "messengerlol-3bedb.firebaseapp.com",
+  databaseURL: "https://messengerlol-3bedb-default-rtdb.firebaseio.com",
+  projectId: "messengerlol-3bedb",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+let currentUser = null;
+let currentChat = null;
+let typingTimeout = null;
+
+/* REGISTER */
+window.register = async () => {
+  const nick = username.value;
+  const pass = password.value;
+  const avatar = document.getElementById("avatar").value;
+
+  if(!nick || !pass) return alert("Заполни поля");
+
+  await signInAnonymously(auth);
+
+  const uid = crypto.randomUUID();
+
+  await set(ref(db,"users/"+uid),{
+    nick,
+    pass,
+    avatar: avatar || "https://i.imgur.com/1X6sZ9B.png"
+  });
+
+  alert("Аккаунт создан! Теперь войди");
+};
+
+/* LOGIN */
+window.login = async () => {
+  const nick = username.value;
+  const pass = password.value;
+
+  await signInAnonymously(auth);
+
+  const snap = await get(ref(db,"users"));
+
+  let found = null;
+
+  snap.forEach(u=>{
+    const d = u.val();
+    if(d.nick === nick && d.pass === pass){
+      found = {uid:u.key, ...d};
+    }
+  });
+
+  if(!found) return alert("Неверный логин или пароль");
+
+  currentUser = {
+    uid:found.uid,
+    nick:found.nick,
+    avatar:found.avatar
+  };
+
+  // 🟢 online
+  const statusRef = ref(db,"status/"+currentUser.uid);
+
+  set(statusRef,{online:true,lastSeen:Date.now()});
+  onDisconnect(statusRef).set({online:false,lastSeen:Date.now()});
+
+  if("Notification" in window){
+    Notification.requestPermission();
+  }
+
+  document.getElementById("auth").style.display="none";
+  document.getElementById("app").style.display="flex";
+
+  loadChats();
+};
+
+/* LOAD USERS */
+function loadChats(){
+  users.innerHTML="";
+
+  onValue(ref(db,"users"), snap=>{
+    users.innerHTML="";
+
+    snap.forEach(u=>{
+      if(u.key === currentUser.uid) return;
+
+      const d=u.val();
+
+      const div=document.createElement("div");
+      div.className="chat-item";
+
+      div.textContent=d.nick;
+
+      div.onclick=()=>openPrivate(u.key);
+      users.appendChild(div);
+    });
+
+    loadGroups();
+  });
+}
+
+/* GROUPS */
+function loadGroups(){
+  onValue(ref(db,"groups"), snap=>{
+    snap.forEach(g=>{
+      const d=g.val();
+      const id=g.key;
+
+      if(
+        d.owner===currentUser.uid ||
+        (d.members && d.members[currentUser.uid]) ||
+        d.isPublic
+      ){
+        const div=document.createElement("div");
+        div.className="chat-item";
+        div.textContent=(d.isPublic?"🌍 ":"🔒 ")+d.name;
+        div.onclick=()=>openGroup(id);
+        users.appendChild(div);
+      }
+    });
+  });
+}
+
+/* CHAT ID */
+function chatId(a,b){
+  return a<b ? a+"_"+b : b+"_"+a;
+}
+
+/* PRIVATE */
+function openPrivate(uid){
+  currentChat={type:"private",id:uid};
+  messages.innerHTML="";
+
+  onValue(ref(db,"messages/"+chatId(currentUser.uid,uid)), snap=>{
+    messages.innerHTML="";
+    snap.forEach(c=>render(c.val(),c.key));
+  });
+
+  listenTyping();
+  markRead();
+}
+
+/* GROUP */
+function openGroup(id){
+  currentChat={type:"group",id};
+  messages.innerHTML="";
+
+  onValue(ref(db,"messages/"+id), snap=>{
+    messages.innerHTML="";
+    snap.forEach(c=>render(c.val(),c.key));
+  });
+
+  listenTyping();
+  markRead();
+}
+
+/* SEND */
+window.send=()=>{
+  const id=Date.now().toString();
+
+  const path=currentChat.type==="private"
+    ?"messages/"+chatId(currentUser.uid,currentChat.id)+"/"+id
+    :"messages/"+currentChat.id+"/"+id;
+
+  set(ref(db,path),{
+    uid:currentUser.uid,
+    nick:currentUser.nick,
+    text:text.value,
+    avatar:currentUser.avatar,
+    readBy:{[currentUser.uid]:true}
+  });
+
+  text.value="";
+};
+
+/* TYPING */
+document.getElementById("text").addEventListener("input",()=>{
+  if(!currentChat) return;
+
+  const path=currentChat.type==="private"
+    ?"typing/private/"+chatId(currentUser.uid,currentChat.id)
+    :"typing/group/"+currentChat.id;
+
+  set(ref(db,path+"/"+currentUser.uid),true);
+
+  clearTimeout(typingTimeout);
+
+  typingTimeout=setTimeout(()=>{
+    set(ref(db,path+"/"+currentUser.uid),null);
+  },2000);
+});
+
+function listenTyping(){
+  const path=currentChat.type==="private"
+    ?"typing/private/"+chatId(currentUser.uid,currentChat.id)
+    :"typing/group/"+currentChat.id;
+
+  onValue(ref(db,path), snap=>{
+    let arr=[];
+    snap.forEach(u=>{
+      if(u.key!==currentUser.uid) arr.push(u.key);
+    });
+
+    typing.textContent = arr.length ? "печатает..." : "";
+  });
+}
+
+/* READ */
+function markRead(){
+  const base=currentChat.type==="private"
+    ?"messages/"+chatId(currentUser.uid,currentChat.id)
+    :"messages/"+currentChat.id;
+
+  onValue(ref(db,base), snap=>{
+    snap.forEach(c=>{
+      set(ref(db,base+"/"+c.key+"/readBy/"+currentUser.uid),true);
+    });
+  });
+}
+
+/* RENDER */
+function render(m,key){
+  const div=document.createElement("div");
+  div.className="msg "+(m.uid===currentUser.uid?"me":"other");
+
+  const count=m.readBy?Object.keys(m.readBy).length:0;
+
+  div.innerHTML=`
+    <img src="${m.avatar}" width="20" style="border-radius:50%">
+    <b>${m.nick}</b>: ${m.text}
+    <div style="font-size:10px;opacity:0.7">👁 ${count}</div>
+  `;
+
+  messages.appendChild(div);
+}
+</script>
+
+</body>
+</html>
