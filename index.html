@@ -362,7 +362,7 @@ window.register = async () => {
     if (uploadedUrl) avatarUrl = uploadedUrl;
   }
 
-  await auth.signInAnonymously();
+  await firebase.auth().signInAnonymously();
   const uid = crypto.randomUUID();
   await db.ref("users/" + uid).set({
     nick: nick,
@@ -381,7 +381,7 @@ window.login = async () => {
   const pass = password.value;
   if(!tag || !pass) return alert("Заполни Юзернейм и Пароль");
   
-  await auth.signInAnonymously();
+  await firebase.auth().signInAnonymously();
   const snap = await db.ref("users").get();
   let found = null;
   
