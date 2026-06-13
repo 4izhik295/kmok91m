@@ -342,7 +342,7 @@ window.register = async () => {
   const nick = username.value.trim();
   const tag = usertag.value.trim().toLowerCase(); 
   const pass = password.value;
-  const fileInput = document.getElementbyId("avatar-file");
+  const fileInput = document.querySelector("#avatar-file");
   
   if(!nick || !tag || !pass) return alert("Заполни все поля");
   if(tag.includes(" ") || tag.length < 3) return alert("Юзернейм должен быть без пробелов и длиннее 2 символов");
