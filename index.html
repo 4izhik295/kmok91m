@@ -520,6 +520,34 @@ function render(msg, key) {
     textNode.textContent = msg.content;
     div.appendChild(textNode);
   }
+  // Вычисляем и добавляем красивое время отправки (ЧЧ:ММ)
+  const timeDiv = document.createElement("div");
+  timeDiv.style.fontSize = "10px";
+  timeDiv.style.opacity = "0.6";
+  timeDiv.style.textAlign = "right";
+  timeDiv.style.marginTop = "4px";
+  
+  if (msg.timestamp) {
+    const d = new Date(msg.timestamp);
+    const hours = ("0" + d.getHours()).slice(-2);
+    const minutes = ("0" + d.getMinutes()).slice(-2);
+    timeDiv.textContent = hours + ":" + minutes;
+  } else {
+    timeDiv.textContent = "--:--";
+  }
+  div.appendChild(timeDiv);
+
+  // Добавляем удаление сообщения по правому клику мыши (только для своих)
+  if (isMe) {
+    div.style.cursor = "context-menu";
+    div.title = "Правый клик для удаления";
+    div.oncontextmenu = (e) => {
+      e.preventDefault(); // Отключаем стандартное меню браузера
+      if (confirm("Удалить это сообщение для всех?")) {
+        db.ref("messages/" + chatId(currentUser.uid, currentChat.id) + "/" + key).remove();
+      }
+    };
+  }
 
   messages.appendChild(div);
 }
