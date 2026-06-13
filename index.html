@@ -545,20 +545,21 @@ window.send = () => {
 
 window.sendImage = async () => {
   const fileInput = document.getElementById("chat-file");
-  if (!fileInput.files || !fileInput.files[0] || !currentChat) return;
-
-  const file = fileInput.files[0];
-  fileInput.value = "";
-
+  if (!fileInput || !fileInput.files || !fileInput.files[0] || !currentChat) return;
+  
+  const file = fileInput.files[0]; // Четко берем первый выбранный файл
+  fileInput.value = ""; 
+  
   const tempId = db.ref().push().key;
   render({ senderId: currentUser.uid, senderNick: currentUser.nick, content: "⏳ Отправка изображения...", type: "text" }, tempId);
   messages.scrollTop = messages.scrollHeight;
 
   const imageUrl = await uploadToImgbb(file);
+  
   if (imageUrl) {
     db.ref("user_chats/" + currentUser.uid + "/" + currentChat.id).set(true);
     db.ref("user_chats/" + currentChat.id + "/" + currentUser.uid).set(true);
-
+    
     const msgRef = db.ref("messages/" + chatId(currentUser.uid, currentChat.id));
     const newMsgRef = msgRef.push();
     newMsgRef.set({
