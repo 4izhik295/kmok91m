@@ -66,6 +66,7 @@ body {
 #auth button:first-of-type { background: var(--primary); color: white; }
 #auth button:last-of-type { background: transparent; color: var(--text-dim); border: 1px solid var(--glass-border); }
 #auth button:hover { opacity: 0.8; transform: translateY(-2px); }
+
 .app {
   display: flex;
   width: 95vw;
@@ -132,6 +133,7 @@ body {
   font-size: 11px;
   color: var(--text-dim);
 }
+
 .chat {
   flex: 1;
   display: flex;
@@ -158,6 +160,7 @@ body {
   font-size: 12px;
   color: var(--text-dim);
 }
+
 .messages {
   flex: 1;
   padding: 20px;
@@ -242,21 +245,29 @@ body {
 }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+@media (max-width: 768px) {
+  .app { width: 100vw; height: 100vh; border-radius: 0; }
+  .sidebar { width: 100%; }
+}
 </style>
 </head>
 <body>
+
 <div id="auth">
   <h2>Вход / Регистрация</h2>
   <input id="username" placeholder="Имя (Ник)">
   <input id="usertag" placeholder="Уникальный юзернейм (например, ivan)">
   <input id="password" type="password" placeholder="Пароль">
+  
   <label class="file-upload-btn" id="avatar-label">
     👤 Выбрать аватарку
     <input id="avatar-file" type="file" accept="image/*" style="display:none;" onchange="document.getElementById('avatar-label').innerText = '✅ Фото выбрано'">
   </label>
+
   <button onclick="register()">Регистрация</button>
   <button onclick="login()">Войти</button>
 </div>
+
 <div class="app" id="app" style="display:none;">
   <div class="sidebar">
     <div class="topbar">
@@ -273,6 +284,7 @@ body {
         <span class="chat-header-tag" id="header-tag"></span>
       </div>
     </div>
+    
     <div class="messages" id="messages"></div>
     <div class="input-area" id="input-container" style="display: none;">
       <label class="input-area button attach-btn">
@@ -284,11 +296,13 @@ body {
     </div>
   </div>
 </div>
-<script type="module">
-import { initializeApp } from "https://gstatic.com";
-import { getAuth, signInAnonymously } from "https://gstatic.com";
-import { getDatabase, ref, set, onValue, get, push, onDisconnect } from "https://gstatic.com";
 
+<!-- Правильное подключение библиотек через официальный CDN без импортов -->
+<script src="https://gstatic.com"></script>
+<script src="https://gstatic.com"></script>
+<script src="https://gstatic.com"></script>
+
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyCp6du4xz9oe0YMhDIE_e1T1nNblVCL4IY",
   authDomain: "://firebaseapp.com",
@@ -296,9 +310,9 @@ const firebaseConfig = {
   projectId: "messengerlol-3bedb",
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getDatabase(app);
+const app = firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.database();
 
 const IMGBB_API_KEY = "99c30768cb5870e44ad25564ed6509bb"; 
 
@@ -331,7 +345,7 @@ window.register = async () => {
   if(!nick || !tag || !pass) return alert("Заполни все поля");
   if(tag.includes(" ") || tag.length < 3) return alert("Юзернейм должен быть без пробелов и длиннее 2 символов");
   
-  const snap = await get(ref(db, "users"));
+  const snap = await db.ref("users").get();
   let isTaken = false;
   if(snap.exists()) {
     snap.forEach(u => {
@@ -348,9 +362,9 @@ window.register = async () => {
     if (uploadedUrl) avatarUrl = uploadedUrl;
   }
 
-  await signInAnonymously(auth);
+  await auth.signInAnonymously();
   const uid = crypto.randomUUID();
-  await set(ref(db, "users/" + uid), {
+  await db.ref("users/" + uid).set({
     nick: nick,
     tag: tag,
     pass: pass,
@@ -361,94 +375,95 @@ window.register = async () => {
   document.getElementById("avatar-label").innerText = "👤 Выбрать аватарку";
   fileInput.value = "";
 };
+
 window.login = async () => {
   const tag = usertag.value.trim().toLowerCase();
   const pass = password.value;
   if(!tag || !pass) return alert("Заполни Юзернейм и Пароль");
   
-  await signInAnonymously(auth);
-  const snap = await get(ref(db, "users"));
+  await auth.signInAnonymously();
+  const snap = await db.ref("users").get();
   let found = null;
   
   if(snap.exists()) {
     snap.forEach(u=>{
       const d = u.val();
-      if(d.tag === tag && d.pass === pass) found = { uid: u.key, ...d };
+      if (d.tag === tag && d.pass === pass) found = { uid: u.key, ...d };
     });
   }
-  
-  if(!found) return alert("Неверный юзернейм или пароль");
+
+  if (!found) return alert("Неверный юзернейм или пароль");
   currentUser = { uid: found.uid, nick: found.nick, tag: found.tag, avatar: found.avatar };
-  
-  const statusRef = ref(db, "status/" + currentUser.uid);
-  set(statusRef, { online: true, lastSeen: Date.now() });
-  onDisconnect(statusRef).set({ online: false, lastSeen: Date.now() });
-  
+
+  const statusRef = db.ref("status/" + currentUser.uid);
+  statusRef.set({ online: true, lastSeen: Date.now() });
+  statusRef.onDisconnect().set({ online: false, lastSeen: Date.now() });
+
   document.getElementById("auth").style.display = "none";
   document.getElementById("app").style.display = "flex";
-  
+
   loadMyChats();
 };
 
 window.createChatByTag = async () => {
   const targetTag = prompt("Введите юзернейм (tag) пользователя, с которым хотите начать чат:").trim().toLowerCase();
-  if(!targetTag) return;
-  if(targetTag === currentUser.tag) return alert("Нельзя создать чат с самим собой");
-  
-  const snap = await get(ref(db, "users"));
+  if (!targetTag) return;
+  if (targetTag === currentUser.tag) return alert("Нельзя создать чат с самим собой");
+
+  const snap = await db.ref("users").get();
   let targetUser = null;
-  
+
   snap.forEach(u => {
-    if(u.val().tag === targetTag) {
+    if (u.val().tag === targetTag) {
       targetUser = { uid: u.key, ...u.val() };
     }
   });
-  
-  if(!targetUser) return alert("Пользователь с таким юзернеймом не найден!");
-  
-  await set(ref(db, "user_chats/" + currentUser.uid + "/" + targetUser.uid), true);
-  await set(ref(db, "user_chats/" + targetUser.uid + "/" + currentUser.uid), true);
-  
+
+  if (!targetUser) return alert("Пользователь с таким юзернеймом не найден!");
+
+  await db.ref("user_chats/" + currentUser.uid + "/" + targetUser.uid).set(true);
+  await db.ref("user_chats/" + targetUser.uid + "/" + currentUser.uid).set(true);
+
   openPrivate(targetUser.uid);
 };
 
 function loadMyChats() {
-  onValue(ref(db, "user_chats/" + currentUser.uid), async (snap) => {
+  db.ref("user_chats/" + currentUser.uid).on("value", async (snap) => {
     users.innerHTML = "";
-    if(!snap.exists()) return;
-    
-    const usersSnap = await get(ref(db, "users"));
+    if (!snap.exists()) return;
+
+    const usersSnap = await db.ref("users").get();
     const allUsers = usersSnap.val() || {};
-    
+
     snap.forEach(chatNode => {
       const targetUid = chatNode.key;
       const uData = allUsers[targetUid];
-      if(!uData) return;
-      
+      if (!uData) return;
+
       const div = document.createElement("div");
       div.className = "chat-item" + (currentChat && currentChat.id === targetUid ? " active" : "");
       div.id = "item-" + targetUid;
-      
+
       const img = document.createElement("img");
       img.className = "user-avatar";
       img.src = uData.avatar || "https://imgur.com";
-      
+
       const infoDiv = document.createElement("div");
       infoDiv.className = "chat-item-info";
-      
+
       const nameSpan = document.createElement("span");
       nameSpan.style.fontWeight = "bold";
       nameSpan.textContent = uData.nick;
-      
+
       const tagSpan = document.createElement("span");
       tagSpan.className = "chat-item-tag";
       tagSpan.textContent = "@" + uData.tag;
-      
+
       infoDiv.appendChild(nameSpan);
       infoDiv.appendChild(tagSpan);
       div.appendChild(img);
       div.appendChild(infoDiv);
-      
+
       div.onclick = () => openPrivate(targetUid);
       users.appendChild(div);
     });
@@ -459,13 +474,13 @@ function chatId(a, b) { return a < b ? a + "_" + b : b + "_" + a; }
 
 async function openPrivate(uid) {
   currentChat = { type: "private", id: uid };
-  
   document.querySelectorAll(".chat-item").forEach(el => el.classList.remove("active"));
+  
   const activeItem = document.getElementById("item-" + uid);
-  if(activeItem) activeItem.classList.add("active");
+  if (activeItem) activeItem.classList.add("active");
 
-  const userSnap = await get(ref(db, "users/" + uid));
-  if(userSnap.exists()) {
+  const userSnap = await db.ref("users/" + uid).get();
+  if (userSnap.exists()) {
     const d = userSnap.val();
     document.getElementById("header-avatar").src = d.avatar;
     document.getElementById("header-name").textContent = d.nick;
@@ -473,9 +488,9 @@ async function openPrivate(uid) {
     document.getElementById("chat-header").style.display = "flex";
     document.getElementById("input-container").style.display = "flex";
   }
-  
+
   messages.innerHTML = "";
-  onValue(ref(db, "messages/" + chatId(currentUser.uid, uid)), snap => {
+  db.ref("messages/" + chatId(currentUser.uid, uid)).on("value", snap => {
     messages.innerHTML = "";
     snap.forEach(c => render(c.val(), c.key));
     messages.scrollTop = messages.scrollHeight;
@@ -486,7 +501,7 @@ function render(msg, key) {
   const div = document.createElement("div");
   const isMe = msg.senderId === currentUser.uid;
   div.className = "msg " + (isMe ? "me" : "other");
-  
+
   const meta = document.createElement("div");
   meta.className = "msg-meta";
   meta.textContent = msg.senderNick;
@@ -503,20 +518,20 @@ function render(msg, key) {
     textNode.textContent = msg.content;
     div.appendChild(textNode);
   }
-  
+
   messages.appendChild(div);
 }
 
 window.send = () => {
   const input = document.getElementById("text");
   if (!input.value.trim() || !currentChat) return;
-  
-  set(ref(db, "user_chats/" + currentUser.uid + "/" + currentChat.id), true);
-  set(ref(db, "user_chats/" + currentChat.id + "/" + currentUser.uid), true);
-  
-  const msgRef = ref(db, "messages/" + chatId(currentUser.uid, currentChat.id));
-  const newMsgRef = push(msgRef);
-  set(newMsgRef, {
+
+  db.ref("user_chats/" + currentUser.uid + "/" + currentChat.id).set(true);
+  db.ref("user_chats/" + currentChat.id + "/" + currentUser.uid).set(true);
+
+  const msgRef = db.ref("messages/" + chatId(currentUser.uid, currentChat.id));
+  const newMsgRef = msgRef.push();
+  newMsgRef.set({
     senderId: currentUser.uid,
     senderNick: currentUser.nick,
     content: input.value,
@@ -529,23 +544,22 @@ window.send = () => {
 window.sendImage = async () => {
   const fileInput = document.getElementById("chat-file");
   if (!fileInput.files || !fileInput.files[0] || !currentChat) return;
-  
+
   const file = fileInput.files[0];
-  fileInput.value = ""; 
-  
-  const tempId = push(ref(db)).key;
+  fileInput.value = "";
+
+  const tempId = db.ref().push().key;
   render({ senderId: currentUser.uid, senderNick: currentUser.nick, content: "⏳ Отправка изображения...", type: "text" }, tempId);
   messages.scrollTop = messages.scrollHeight;
 
   const imageUrl = await uploadToImgbb(file);
-  
   if (imageUrl) {
-    set(ref(db, "user_chats/" + currentUser.uid + "/" + currentChat.id), true);
-    set(ref(db, "user_chats/" + currentChat.id + "/" + currentUser.uid), true);
-    
-    const msgRef = ref(db, "messages/" + chatId(currentUser.uid, currentChat.id));
-    const newMsgRef = push(msgRef);
-    set(newMsgRef, {
+    db.ref("user_chats/" + currentUser.uid + "/" + currentChat.id).set(true);
+    db.ref("user_chats/" + currentChat.id + "/" + currentUser.uid).set(true);
+
+    const msgRef = db.ref("messages/" + chatId(currentUser.uid, currentChat.id));
+    const newMsgRef = msgRef.push();
+    newMsgRef.set({
       senderId: currentUser.uid,
       senderNick: currentUser.nick,
       content: imageUrl,
@@ -556,6 +570,3 @@ window.sendImage = async () => {
     alert("Не удалось загрузить картинку");
   }
 };
-</script>
-</body>
-</html>
